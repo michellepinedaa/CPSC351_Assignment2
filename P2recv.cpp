@@ -1,57 +1,70 @@
 #include <iostream>
 #include <fstream>
 #include <cstring>
-#include <unistd.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-#include <csignal>
+#include <sys/stat.h>
+#include <mqueue.h>
+#include <unistd.h>
+#include <cstdlib>
+
+#define QUEUE_NAME "/cpsc351queue"
+#define MAX_SIZE 4096
+#define MSG_STOP "STOP"
 
 using namespace std;
 
-void recvFile(int sigNum) {
-    if (sigNum == SIGUSR1) {
-        // open shared memory
-        int shmid = shm_open("/cpsc351sharedmem", O_RDWR, 0600);
-        if (shmid < 0) {
-            perror("shm_open failed");
-            exit(1);
-        }
+int main() {
+    // Set message queue attributes
+    struct mq_attr attr;
+    attr.mq_flags = 0;          // blocking queue
+    attr.mq_maxmsg = 10;        // max 10 messages
+    attr.mq_msgsize = MAX_SIZE; // max message size
+    attr.mq_curmsgs = 0;
 
-        const int SHM_SIZE = 4096;
-
-        void* ptr = mmap(0, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shmid, 0);
-        if (ptr == MAP_FAILED) {
-            perror("mmap failed");
-            exit(1);
-        }
-
-        // copy data to file
-        char buffer[100];
-        strncpy(buffer, static_cast<char*>(ptr), 100);
-
-        ofstream outFile("file_recv");
-        outFile << "received: " << buffer;
-        outFile.close();
-
-        // cleanup
-        munmap(ptr, SHM_SIZE);
-        shm_unlink("/cpsc351sharedmem");
-    } else {
-        cerr << "Wrong signal!" << endl;
+    // Create the message queue (or open if exists)
+    mqd_t mq = mq_open(QUEUE_NAME, O_CREAT | O_RDONLY, 0644, &attr);
+    if (mq == (mqd_t)-1) {
+        perror("mq_open");
         exit(1);
     }
-}
 
-int main() {
-    signal(SIGUSR1, recvFile);
+    char buffer[MAX_SIZE + 1]; // buffer for received message
+    ssize_t bytes_read;
 
-    cout << "Receiver PID: " << getpid() << endl;
-    cout << "Waiting for signal..." << endl;
+    // Open file to write received data
+    int out_fd = open("file_recv", O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (out_fd == -1) {
+        perror("open file_recv");
+        mq_close(mq);
+        mq_unlink(QUEUE_NAME);
+        exit(1);
+    }
 
     while (true) {
-        sleep(1);
+        memset(buffer, 0, sizeof(buffer));
+
+        // Receive message (blocking)
+        bytes_read = mq_receive(mq, buffer, MAX_SIZE, nullptr);
+        if (bytes_read < 0) {
+            perror("mq_receive");
+            break;
+        }
+
+        // Check for "empty" message (end of file)
+        if (bytes_read == 0 || strncmp(buffer, MSG_STOP, 4) == 0) {
+            break;
+        }
+
+        // Write received data to file
+        if (write(out_fd, buffer, bytes_read) == -1) {
+            perror("write");
+            break;
+        }
     }
+
+    close(out_fd);
+    mq_close(mq);
+    mq_unlink(QUEUE_NAME); // delete the message queue
 
     return 0;
 }
