@@ -7,11 +7,11 @@
 #include <unistd.h>
 #include <cstdlib>
 
-#define QUEUE_NAME "/cpsc351queue"
-#define MAX_SIZE 4096
-#define MSG_STOP "STOP"
-
 using namespace std;
+
+static constexpr const char* QUEUE_NAME = "/cpsc351queue";
+static constexpr size_t MAX_SIZE   = 4096;
+static constexpr const char* MSG_STOP   = "STOP";
 
 int main() {
     struct mq_attr attr;

@@ -13,4 +13,14 @@
  C++
 
 ## How to execute the code:
+
+P1recv:
+
+P1sender:
+
+P2recv:
+
+P2sender:
+
+pipefile:
  
